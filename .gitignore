@@ -7,6 +7,7 @@ __pycache__
 /node_modules
 /.pnp
 .pnp.js
+nodejs
 
 # testing
 /coverage
@@ -16,5 +17,8 @@ __pycache__
 
 # misc
 .DS_Store
+
+!nodejs/package-lock.json
+!nodejs/package.json
 
 
