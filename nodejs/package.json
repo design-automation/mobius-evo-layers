@@ -1,0 +1,35 @@
+{
+    "version": "1.0.1",
+    "description": "",
+    "dependencies": {
+        "@doodle3d/clipper-js": "^1.0.11",
+        "@types/d3-delaunay": "^4.1.0",
+        "@types/d3-polygon": "^1.0.7",
+        "@types/d3-voronoi": "^1.1.9",
+        "@types/node": "^11.13.4",
+        "@types/three": "^0.103.2",
+        "aws-sdk": "^2.461.0",
+        "chroma-js": "^2.0.3",
+        "circular-json": "^0.5.9",
+        "cytoscape": "^3.14.1",
+        "d3-delaunay": "^5.2.1",
+        "d3-polygon": "^1.0.6",
+        "d3-voronoi": "^1.1.4",
+        "jszip": "^3.4.0",
+        "lodash": "^4.17.21",
+        "mathjs": "^5.9.0",
+        "module-alias": "^2.2.2",
+        "node-fetch": "^2.6.1",
+        "proj4": "^2.5.0",
+        "rxjs": "^6.4.0",
+        "three": "^0.110.0",
+        "underscore": "^1.9.1",
+        "xmlhttprequest": "^1.8.0"
+
+    },
+    "_moduleAliases": {
+        "@libs": "./libs",
+        "@assets": ".",
+        "@models": "./model"
+    }
+}
