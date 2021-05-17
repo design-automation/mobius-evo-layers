@@ -9,6 +9,8 @@ import shutil
 import zipfile
 import json
 import subprocess
+import datetime
+import re
 
 try:
     import __AMAZON_KEY__
@@ -35,7 +37,7 @@ aws_secret_access_key = __AMAZON_KEY__.aws_secret_access_key
 mobius_directory = 'C:\\Users\\akibdpt\\Documents\\Angular\\mobius-parametric-modeller-dev-0-7'
 
 # the lambda function name
-MAIN_LAYER = 'arn:aws:lambda:us-east-1:114056409474:function:Mobius_edx_Grader'
+MAIN_LAYER = 'arn:aws:lambda:us-east-1:114056409474:layer:evo_layer'
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # change this FUNC_NAME to whichever function you want to update
@@ -102,8 +104,8 @@ def build_code():
     return True
 
 def zipdir():
-    print('\n\nZipping files in dist folder...')
-    zipPath = 'dist/'
+    print('\n\nZipping files in nodejs folder...')
+    zipPath = 'nodejs/'
 
     # create ziph: zipfile handle
     ziph = zipfile.ZipFile('zipped_file/zip_layer.zip', 'w', zipfile.ZIP_DEFLATED)
@@ -112,7 +114,7 @@ def zipdir():
         count += 1
         for file in files:
             fDir = os.path.join(root, file)
-            print('    Zipping', fDir)
+            # print('    Zipping', fDir)
             ziph.write(fDir, os.path.join(root[5:], file))
     ziph.close()
     if count == 0:
@@ -129,7 +131,29 @@ def upload_to_amazon(zipfile, funcName):
                     region_name='us-east-1',
                     aws_access_key_id = aws_access_key_id,
                     aws_secret_access_key = aws_secret_access_key)
-    r = lambda_client.update_function_code(FunctionName= funcName, ZipFile=zipfile)
+    # r = lambda_client.list_layer_versions(
+    #     CompatibleRuntime='nodejs14.x',
+    #     LayerName=funcName,
+    #     MaxItems=10
+    # )
+    r = lambda_client.publish_layer_version(
+        LayerName=funcName,
+        Description='evo layer',
+        Content={
+            'ZipFile': zipfile
+        },
+        CompatibleRuntimes=['nodejs14.x']
+    )
+    version = r['Version']
+    statement = 'p_' + re.sub(r'[\.\:\-\s]', '_', str(datetime.datetime.now()))
+    r = lambda_client.add_layer_version_permission(
+        LayerName=funcName,
+        VersionNumber=version,
+        StatementId= statement,
+        Action='lambda:GetLayerVersion',
+        Principal='*'
+    )
+
     print('Uploading completed')
     for i in r:
         print('   ', i ,':', r[i])
@@ -138,11 +162,11 @@ def upload_to_amazon(zipfile, funcName):
 
 if __name__ == '__main__':
     # copy_from_mobius()
-    buildcheck = build_code()
-    if buildcheck:
-        zipcheck = zipdir()
+    # buildcheck = build_code()
+    # if buildcheck:
+    #     zipcheck = zipdir()
         # if zipcheck:
-        #     zippedFile = open('zipped_file/zip_layer.zip', 'rb').read()
-        #     upload_to_amazon(zippedFile, FUNC_NAME)
+            zippedFile = open('zipped_file/zip_layer.zip', 'rb').read()
+            upload_to_amazon(zippedFile, FUNC_NAME)
 
 

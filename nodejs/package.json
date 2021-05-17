@@ -25,7 +25,6 @@
         "three": "^0.110.0",
         "underscore": "^1.9.1",
         "xmlhttprequest": "^1.8.0"
-
     },
     "_moduleAliases": {
         "@libs": "./libs",

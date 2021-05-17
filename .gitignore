@@ -8,6 +8,7 @@ __pycache__
 /.pnp
 .pnp.js
 nodejs
+/zipped_file/zip_layer.zip
 
 # testing
 /coverage
