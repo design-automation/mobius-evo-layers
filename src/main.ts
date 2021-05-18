@@ -421,11 +421,12 @@ function mutateDesign(existing_design, paramMap, existingParams, newIDNum, newGe
                 } else if (existing_design.params[param.name] === param.max) {
                     pos_neg = -1;
                 }
-                let added_val = Math.pow(Math.random(), 50);
+                const gaussian_mutation_val = Math.pow(Math.E, -1 * Math.pow(Math.random(), 2) / (2 * Math.pow(0.1, 2)));
+                let added_val;
                 if (pos_neg < 0) {
-                    added_val = -1 - Math.floor((added_val * (existing_design.params[param.name] - param.min)) / param.step);
+                    added_val = -1 - Math.floor((gaussian_mutation_val * (existing_design.params[param.name] - param.min)) / param.step);
                 } else {
-                    added_val = 1 + Math.floor((added_val * (param.max - existing_design.params[param.name])) / param.step);
+                    added_val = 1 + Math.floor((gaussian_mutation_val * (param.max - existing_design.params[param.name])) / param.step);
                 }
                 new_param[param.name] = param.min + (existing_step + added_val) * param.step;
             } else {
@@ -645,6 +646,20 @@ async function getJobEntries(jobID, allEntries, liveEntries, existingParams) {
 }
 
 export async function runGenEvalController(input) {
+    console.log("~~~ input: ", input);
+    const record = input.Records[0];
+    if (record.eventName !== "INSERT" && record.eventName !== "MODIFY") {
+        return;
+    }
+    console.log("DynamoDB Record: %j", record.dynamodb);
+    const event = AWS.DynamoDB.Converter.unmarshall(record.dynamodb.NewImage);
+    console.log("Unmarshalled Record:", event);
+    if (!event.genUrl || !event.evalUrl || !event.run) {
+        return false;
+    }
+    if (typeof event.genUrl === "string") {
+        return false;
+    }
     const docClient = new AWS.DynamoDB.DocumentClient({ region: "us-east-1" });
     const lambda = new AWS.Lambda({
         region: "us-east-1",
@@ -653,29 +668,6 @@ export async function runGenEvalController(input) {
             xhrAsync: true,
         },
     });
-    // console.log("~~~ input: ", input);
-    // const record = input.Records[0];
-    // if (record.eventName !== "INSERT" && record.eventName !== "MODIFY") {
-    //     return;
-    // }
-    // console.log("DynamoDB Record: %j", record.dynamodb);
-    // const event = AWS.DynamoDB.Converter.unmarshall(record.dynamodb.NewImage);
-    let inputJSON;
-    console.log("~~~ input: ", input);
-    console.log("~~~ input type: ", typeof input);
-    try {
-        inputJSON = JSON.parse(input);
-    } catch (ex) {
-        inputJSON = input;
-    }
-    const event = inputJSON;
-    console.log("Unmarshalled Record:", event);
-    if (!event.genUrl || !event.evalUrl || !event.run) {
-        return false;
-    }
-    if (typeof event.genUrl === "string") {
-        return false;
-    }
     const population_size = event.population_size;
     const max_designs = event.max_designs;
     const tournament_size = event.tournament_size;

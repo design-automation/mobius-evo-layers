@@ -115,7 +115,7 @@ def zipdir():
         for file in files:
             fDir = os.path.join(root, file)
             # print('    Zipping', fDir)
-            ziph.write(fDir, os.path.join(root[5:], file))
+            ziph.write(fDir, fDir)
     ziph.close()
     if count == 0:
         print('Error: No dist folder to be zipped')
@@ -145,6 +145,12 @@ def upload_to_amazon(zipfile, funcName):
         CompatibleRuntimes=['nodejs14.x']
     )
     version = r['Version']
+    print('Uploading completed')
+    for i in r:
+        print('   ', i ,':', r[i])
+    print()
+
+    print('Updating version permission')
     statement = 'p_' + re.sub(r'[\.\:\-\s]', '_', str(datetime.datetime.now()))
     r = lambda_client.add_layer_version_permission(
         LayerName=funcName,
@@ -154,7 +160,7 @@ def upload_to_amazon(zipfile, funcName):
         Principal='*'
     )
 
-    print('Uploading completed')
+    print('Permission update completed')
     for i in r:
         print('   ', i ,':', r[i])
     print()
@@ -162,10 +168,10 @@ def upload_to_amazon(zipfile, funcName):
 
 if __name__ == '__main__':
     # copy_from_mobius()
-    # buildcheck = build_code()
-    # if buildcheck:
-    #     zipcheck = zipdir()
-        # if zipcheck:
+    buildcheck = build_code()
+    if buildcheck:
+        zipcheck = zipdir()
+        if zipcheck:
             zippedFile = open('zipped_file/zip_layer.zip', 'rb').read()
             upload_to_amazon(zippedFile, FUNC_NAME)
 
