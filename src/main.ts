@@ -77,6 +77,27 @@ function printFunc(_console, name, value){
 }
 `;
 
+/**
+ * GLOBAL CONSTANTS
+ */
+
+const GAUSSIAN_C = 0.05;
+const GAUSSIAN_C_INCREMENT = 0.01;
+const MUTATE_FAILURE_THRESHOLD = 20;
+
+/**
+ * AWS HANDLERS
+ */
+
+const DYNAMO_HANDLER = new AWS.DynamoDB.DocumentClient({ region: "us-east-1" });
+const S3_HANDLER = new AWS.S3();
+const LAMBDA_HANDLER = new AWS.Lambda({
+    region: "us-east-1",
+    httpOptions: {
+        timeout: 600000,
+        xhrAsync: true,
+    },
+});
 
 function getModelString(model: GIModel): string {
     let model_data = model.exportGI(null);
@@ -106,9 +127,17 @@ export async function runJavascriptFile(event: { file: string; parameters: {}; m
                 const val0 = args.map((arg) => arg.name);
                 const val1 = args.map((arg) => {
                     if (event.parameters && event.parameters.hasOwnProperty(arg.name)) {
-                        return event.parameters[arg.name];
+                        const numVal = Number(event.parameters[arg.name])
+                        if (!numVal && numVal !== 0) {
+                            return event.parameters[arg.name]
+                        }
+                        return numVal;
                     }
-                    return arg.value;
+                    const numVal = Number(arg.value)
+                    if (!numVal && numVal !== 0) {
+                        return arg.value
+                    }
+                    return numVal;
                 });
                 let prefixString = `async function __main_func(__modules__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
                 if (event.model) {
@@ -156,7 +185,11 @@ async function testExecuteJSFile(file, model = null, params = null) {
         if (params && params.hasOwnProperty(arg.name)) {
             return params[arg.name];
         }
-        return arg.value;
+        const numVal = Number(arg.value)
+        if (!numVal && numVal !== 0) {
+            return arg.value
+        }
+        return numVal;
     });
     let prefixString = `async function __main_func(__modules__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
     if (model) {
@@ -217,8 +250,6 @@ export async function testGenEval(event: { genFile: string; evalFile: string; ge
 }
 
 export async function runGen(data): Promise<{__success__: boolean, __error__?: string}> {
-    const docClient = new AWS.DynamoDB.DocumentClient({ region: "us-east-1" });
-    const s3 = new AWS.S3();
     if (!data.genUrl || !data.evalUrl) {
         return { __success__: false, __error__: 'Gen Error: gen file or eval file URLs are not provided.' };
     }
@@ -242,9 +273,17 @@ export async function runGen(data): Promise<{__success__: boolean, __error__?: s
             const val0 = args.map((arg) => arg.name);
             const val1 = args.map((arg) => {
                 if (data.params && data.params.hasOwnProperty(arg.name)) {
-                    return data.params[arg.name];
+                    const numVal = Number(data.params[arg.name]);
+                    if (!numVal && numVal !== 0) {
+                        return data.params[arg.name];
+                    }
+                    return numVal;
                 }
-                return arg.value;
+                const numVal = Number(arg.value)
+                if (!numVal && numVal !== 0) {
+                    return arg.value
+                }
+                return numVal;
             });
             // const addedString = `__debug__ = false;\n__model__ = null;\n` const fn = new
             // Function('__modules__', ...val0, addedString + splittedString[1]); const
@@ -260,7 +299,7 @@ export async function runGen(data): Promise<{__success__: boolean, __error__?: s
             let checkModelDB = false;
             let checkParamDB = false;
 
-            s3.putObject(
+            S3_HANDLER.putObject(
                 {
                     Bucket: process.env.STORAGE_MOBIUSEVOUSERFILES_BUCKETNAME,
                     Key: "public/" + data.owner + "/" + data.JobID + "/" + data.id + ".gi",
@@ -298,7 +337,7 @@ export async function runGen(data): Promise<{__success__: boolean, __error__?: s
                     errorMessage: null
                 },
             };
-            docClient.put(params, function (err, result) {
+            DYNAMO_HANDLER.put(params, function (err, result) {
                 if (err) {
                     console.log("Error placing gen data:", err);
                     resolve({ __success__: false, __error__: 'Gen Error: Unable to place Gen Data onto DynamoDB.' });
@@ -319,15 +358,13 @@ export async function runGen(data): Promise<{__success__: boolean, __error__?: s
 }
 
 export async function runEval(recordInfo): Promise<{__error__?: string}> {
-    const docClient = new AWS.DynamoDB.DocumentClient({ region: "us-east-1" });
-    const s3 = new AWS.S3();
     console.log("param id:", recordInfo.id);
     const params = {
         Bucket: process.env.STORAGE_MOBIUSEVOUSERFILES_BUCKETNAME,
         // Key: "models/" + recordInfo.id + ".gi",
         Key: "public/" + recordInfo.owner + "/" + recordInfo.JobID + "/" + recordInfo.id + ".gi",
     };
-    const r = await s3.getObject(params).promise();
+    const r = await S3_HANDLER.getObject(params).promise();
     if (!r) {
         return { __error__: 'Eval Error: Unable to retrieve Gen model.' };
     }
@@ -362,7 +399,7 @@ export async function runEval(recordInfo): Promise<{__error__?: string}> {
             const fn = new Function(prefixString + splittedString[1] + postfixString);
             const result = await fn()(Modules, ...val1);
             const model = getModelString(result.model).replace(/\\/g, "");
-            s3.putObject(
+            S3_HANDLER.putObject(
                 {
                     Bucket: process.env.STORAGE_MOBIUSEVOUSERFILES_BUCKETNAME,
                     Key: "public/" + recordInfo.owner + "/" + recordInfo.JobID + "/" + recordInfo.id + "_eval.gi",
@@ -410,6 +447,7 @@ function mutateDesign(existing_design, paramMap, existingParams, newIDNum, newGe
         deadWritten: false,
     };
     let failCount = 0;
+    let c = GAUSSIAN_C;
     while (true) {
         const new_param = {};
         for (const param of paramMap[new_design.genUrl]) {
@@ -421,12 +459,12 @@ function mutateDesign(existing_design, paramMap, existingParams, newIDNum, newGe
                 } else if (existing_design.params[param.name] === param.max) {
                     pos_neg = -1;
                 }
-                const gaussian_mutation_val = Math.pow(Math.E, -1 * Math.pow(Math.random(), 2) / (2 * Math.pow(0.1, 2)));
+                const gaussian_mutation_val = Math.pow(Math.E, -1 * Math.pow(Math.random(), 2) / (2 * Math.pow(c, 2)));
                 let added_val;
                 if (pos_neg < 0) {
-                    added_val = -1 - Math.floor((gaussian_mutation_val * (existing_design.params[param.name] - param.min)) / param.step);
+                    added_val = - Math.floor((gaussian_mutation_val * (existing_design.params[param.name] - param.min)) / param.step);
                 } else {
-                    added_val = 1 + Math.floor((gaussian_mutation_val * (param.max - existing_design.params[param.name])) / param.step);
+                    added_val = Math.floor((gaussian_mutation_val * (param.max - existing_design.params[param.name])) / param.step);
                 }
                 new_param[param.name] = param.min + (existing_step + added_val) * param.step;
             } else {
@@ -435,13 +473,29 @@ function mutateDesign(existing_design, paramMap, existingParams, newIDNum, newGe
         }
         new_design.params = new_param;
         if (existingParams[new_design.genUrl]) {
-            if (existingParams[new_design.genUrl].indexOf(new_param) !== -1) {
+            let duplicateCheck = false;
+            for (const existingParam of existingParams[new_design.genUrl]) {
+                let isDuplicate = true;
+                for (const param of paramMap[new_design.genUrl]) {
+                    if (new_param[param.name] !== existingParam[param.name]){
+                        isDuplicate = false;
+                        break;
+                    }
+                }
+                if (isDuplicate) {
+                    duplicateCheck = true;
+                    break;
+                }
+            }
+            if (duplicateCheck) {
                 console.log('duplicate param:', new_param)
-                if (failCount > 10) {
+                if (failCount >= MUTATE_FAILURE_THRESHOLD) {
                     existingParams[new_design.genUrl].push(new_param);
                     break;
                 }
+                // c = c + ((1 - c) * GAUSSIAN_C_INCREMENT);
                 failCount += 1;
+                continue;
             } else {
                 existingParams[new_design.genUrl].push(new_param);
                 break;
@@ -493,7 +547,6 @@ function tournamentSelect(liveDesignList: any[], deadDesignList: any[], tourname
 }
 
 async function getGenEvalFile(fileUrl): Promise<any> {
-    const s3 = new AWS.S3();
     const filePromise = new Promise((resolve) => {
         if (fileUrl.indexOf("s3.amazonaws") !== -1) {
             const urlSplit = decodeURIComponent(fileUrl).split(".s3.amazonaws.com/");
@@ -501,7 +554,7 @@ async function getGenEvalFile(fileUrl): Promise<any> {
                 Bucket: urlSplit[0].replace("https://", ""),
                 Key: urlSplit[1],
             };
-            s3.getObject(item, function (err, data) {
+            S3_HANDLER.getObject(item, function (err, data) {
                 if (err) {
                     console.log(err, err.stack);
                     resolve(null);
@@ -528,9 +581,8 @@ async function getGenEvalFile(fileUrl): Promise<any> {
 }
 
 async function updateJobDB(jobID: string, run: boolean, status: string) {
-    const docClient = new AWS.DynamoDB.DocumentClient({ region: "us-east-1" });
     const jobDBUpdatePromise = new Promise<boolean>((resolve) => {
-        docClient.update(
+        DYNAMO_HANDLER.update(
             {
                 TableName: process.env.API_MOBIUSEVOGRAPHQL_JOBTABLE_NAME,
                 Key: {
@@ -562,37 +614,10 @@ async function updateJobDB(jobID: string, run: boolean, status: string) {
     await jobDBUpdatePromise;
 }
 
-function updateJobError(jobID: string, docClient: AWS.DynamoDB.DocumentClient, msg: string) {
-    docClient.update(
-        {
-            TableName: process.env.API_MOBIUSEVOGRAPHQL_JOBTABLE_NAME,
-            Key: {
-                id: jobID,
-            },
-            UpdateExpression: "set endedAt=:t, jobStatus=:s, updatedAt=:u, errorMessage=:m",
-            ExpressionAttributeValues: {
-                ":t": new Date().toISOString(),
-                ":s": "terminated",
-                ":u": new Date().toISOString(),
-                ":m": msg,
-            },
-            ReturnValues: "UPDATED_NEW",
-        },
-        (err, record) => {
-            if (err) {
-                console.log("error updating job db", err);
-            } else {
-                console.log("successfully updating job db");
-            }
-        }
-    );
-    // throw new Error(msg);
-}
 
 async function getJobEntries(jobID, allEntries, liveEntries, existingParams) {
-    const docClient = new AWS.DynamoDB.DocumentClient({ region: "us-east-1" });
     const p = new Promise((resolve) => {
-        docClient.query(
+        DYNAMO_HANDLER.query(
             {
                 TableName: process.env.API_MOBIUSEVOGRAPHQL_GENEVALPARAMTABLE_NAME,
                 IndexName: "byJobID",
@@ -660,14 +685,6 @@ export async function runGenEvalController(input) {
     if (typeof event.genUrl === "string") {
         return false;
     }
-    const docClient = new AWS.DynamoDB.DocumentClient({ region: "us-east-1" });
-    const lambda = new AWS.Lambda({
-        region: "us-east-1",
-        httpOptions: {
-            timeout: 600000,
-            xhrAsync: true,
-        },
-    });
     const population_size = event.population_size;
     const max_designs = event.max_designs;
     const tournament_size = event.tournament_size;
@@ -728,7 +745,7 @@ export async function runGenEvalController(input) {
         // check if the job should still be running:  _ check JOB_DB for the job, if
         // job.run is not true, stop the run and return
         const runCheckPromise = new Promise((resolve) => {
-            docClient.get(
+            DYNAMO_HANDLER.get(
                 {
                     TableName: process.env.API_MOBIUSEVOGRAPHQL_JOBTABLE_NAME,
                     Key: {
@@ -781,7 +798,7 @@ export async function runGenEvalController(input) {
                 new Promise((resolve) => {
                     const entryBlob = JSON.stringify(entry);
                     // run gen
-                    lambda.invoke(
+                    LAMBDA_HANDLER.invoke(
                         {
                             FunctionName: process.env.FUNCTION_EVOGENERATE_NAME,
                             Payload: entryBlob,
@@ -805,7 +822,7 @@ export async function runGenEvalController(input) {
                                 });
                             }
                             // run eval
-                            lambda.invoke(
+                            LAMBDA_HANDLER.invoke(
                                 {
                                     FunctionName: process.env.FUNCTION_EVOEVALUATE_NAME,
                                     Payload: entryBlob,
@@ -891,7 +908,7 @@ export async function runGenEvalController(input) {
                                 },
                             };
                             updateDynamoPromises.push(new Promise(resolve => {
-                                docClient.put(params, (err, data) => {
+                                DYNAMO_HANDLER.put(params, (err, data) => {
                                     resolve(null);
                                 })
                             }));
@@ -926,7 +943,7 @@ export async function runGenEvalController(input) {
                     ReturnValues: "UPDATED_NEW",
                 };
                 const p = new Promise((resolve) => {
-                    docClient.update(updateParamEntry, function (err, data) {
+                    DYNAMO_HANDLER.update(updateParamEntry, function (err, data) {
                         if (err) {
                             console.log("Error placing data (live entry's score, evalResult):", err);
                             resolve(null);
@@ -962,7 +979,7 @@ export async function runGenEvalController(input) {
                     ReturnValues: "UPDATED_NEW",
                 };
                 const p = new Promise((resolve) => {
-                    docClient.update(updateParamEntry, function (err, data) {
+                    DYNAMO_HANDLER.update(updateParamEntry, function (err, data) {
                         if (err) {
                             console.log("Error placing data (dead entry's score, evalResult, expirationTime):", err);
                             resolve(null);
