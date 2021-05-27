@@ -81,8 +81,9 @@ function printFunc(_console, name, value){
  * GLOBAL CONSTANTS
  */
 
-const GAUSSIAN_C = 0.05;
-const GAUSSIAN_C_INCREMENT = 0.01;
+const GAUSSIAN_CONSTANT = 0.05;
+const GAUSSIAN_STEP_ADJUSTMENT = 0.4;
+const GAUSSIAN_CONSTANT_INCREMENT = 0.01;
 const MUTATE_FAILURE_THRESHOLD = 20;
 
 /**
@@ -447,25 +448,29 @@ function mutateDesign(existing_design, paramMap, existingParams, newIDNum, newGe
         deadWritten: false,
     };
     let failCount = 0;
-    let c = GAUSSIAN_C;
     while (true) {
         const new_param = {};
         for (const param of paramMap[new_design.genUrl]) {
             if (param.hasOwnProperty("step")) {
                 let pos_neg = Math.floor(Math.random() * 2) == 0 ? -1 : 1;
-                const existing_step = (existing_design.params[param.name] - param.min) / param.step;
                 if (existing_design.params[param.name] === param.min) {
                     pos_neg = 1;
                 } else if (existing_design.params[param.name] === param.max) {
                     pos_neg = -1;
                 }
-                const gaussian_mutation_val = Math.pow(Math.E, -1 * Math.pow(Math.random(), 2) / (2 * Math.pow(c, 2)));
-                let added_val;
+
+                let num_steps;
                 if (pos_neg < 0) {
-                    added_val = - Math.floor((gaussian_mutation_val * (existing_design.params[param.name] - param.min)) / param.step);
+                    num_steps = (existing_design.params[param.name] - param.min) / param.step;
                 } else {
-                    added_val = Math.floor((gaussian_mutation_val * (param.max - existing_design.params[param.name])) / param.step);
+                    num_steps = (param.max - existing_design.params[param.name]) / param.step;
                 }
+
+                const c = GAUSSIAN_CONSTANT + GAUSSIAN_STEP_ADJUSTMENT / (num_steps + 1);
+                const gaussian_mutation_val = Math.pow(Math.E, -1 * Math.pow(Math.random(), 2) / (2 * Math.pow(c, 2)));
+                const added_val = pos_neg * Math.floor(gaussian_mutation_val * (num_steps + 1));
+
+                const existing_step = (existing_design.params[param.name] - param.min) / param.step;
                 new_param[param.name] = param.min + (existing_step + added_val) * param.step;
             } else {
                 new_param[param.name] = existing_design.params[param.name];
@@ -493,7 +498,7 @@ function mutateDesign(existing_design, paramMap, existingParams, newIDNum, newGe
                     existingParams[new_design.genUrl].push(new_param);
                     break;
                 }
-                // c = c + ((1 - c) * GAUSSIAN_C_INCREMENT);
+                // c = c + ((1 - c) * GAUSSIAN_CONSTANT_INCREMENT);
                 failCount += 1;
                 continue;
             } else {
@@ -521,6 +526,11 @@ function checkDuplicateDesign(newDesign, allParams): boolean {
 
 // function getRandomDesign(designList, tournamentSize, eliminateSize) { }
 
+// function tournamentSelect(liveDesignList: any[], deadDesignList: any[], tournament_size: number) {
+//     const liveDesignTournament = {};
+// }
+
+// ________________________ OLD TOURNAMENT CODE ________________________
 function tournamentSelect(liveDesignList: any[], deadDesignList: any[], tournament_size: number, survival_size: number) {
     // select tournamentSize number of designs from live list
     let selectedDesigns = [];
@@ -689,8 +699,6 @@ export async function runGenEvalController(input) {
     const max_designs = event.max_designs;
     const tournament_size = event.tournament_size;
     const survival_size = event.survival_size;
-    const expiration = event.expiration;
-    const expiration_time = Math.round(Date.now() / 1000) + expiration;
 
     const paramMap = {};
     for (const genUrl of event.genUrl) {
@@ -968,12 +976,11 @@ export async function runGenEvalController(input) {
                     Key: {
                         id: entry.id,
                     },
-                    UpdateExpression: "set live = :l, score=:s, evalResult=:e, expirationTime=:x, updatedAt=:u",
+                    UpdateExpression: "set live = :l, score=:s, evalResult=:e, updatedAt=:u",
                     ExpressionAttributeValues: {
                         ":l": false,
                         ":s": entry.score,
                         ":e": entry.evalResult,
-                        ":x": expiration_time,
                         ":u": new Date().toISOString(),
                     },
                     ReturnValues: "UPDATED_NEW",
@@ -981,7 +988,7 @@ export async function runGenEvalController(input) {
                 const p = new Promise((resolve) => {
                     DYNAMO_HANDLER.update(updateParamEntry, function (err, data) {
                         if (err) {
-                            console.log("Error placing data (dead entry's score, evalResult, expirationTime):", err);
+                            console.log("Error placing data (dead entry's score, evalResult):", err);
                             resolve(null);
                         } else {
                             resolve(null);
