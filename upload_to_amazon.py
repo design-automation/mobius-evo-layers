@@ -165,6 +165,39 @@ def upload_to_amazon(zipfile, funcName):
         print('   ', i ,':', r[i])
     print()
 
+    r = lambda_client.delete_layer_version(
+        LayerName=funcName,
+        VersionNumber=version - 4,
+    )
+
+    print('delete layer completed')
+    for i in r:
+        print('   ', i ,':', r[i])
+    print()
+
+
+def update_layer_permission(funcName, version):
+    lambda_client = boto3.client('lambda', 
+                    region_name='us-east-1',
+                    aws_access_key_id = aws_access_key_id,
+                    aws_secret_access_key = aws_secret_access_key)
+
+    print('Updating version permission')
+    statement = 'p_' + re.sub(r'[\.\:\-\s]', '_', str(datetime.datetime.now()))
+    r = lambda_client.add_layer_version_permission(
+        LayerName=funcName,
+        VersionNumber=version,
+        StatementId= statement,
+        Action='lambda:GetLayerVersion',
+        Principal='*'
+    )
+
+    print('Permission update completed')
+    for i in r:
+        print('   ', i ,':', r[i])
+    print()
+
+
 
 if __name__ == '__main__':
     # copy_from_mobius()
@@ -175,4 +208,4 @@ if __name__ == '__main__':
             zippedFile = open('zipped_file/zip_layer.zip', 'rb').read()
             upload_to_amazon(zippedFile, FUNC_NAME)
 
-
+    # update_layer_permission(FUNC_NAME, 16)

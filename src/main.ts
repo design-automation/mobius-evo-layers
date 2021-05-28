@@ -84,7 +84,9 @@ function printFunc(_console, name, value){
 const GAUSSIAN_CONSTANT = 0.05;
 const GAUSSIAN_STEP_ADJUSTMENT = 0.4;
 const GAUSSIAN_CONSTANT_INCREMENT = 0.01;
+
 const MUTATE_FAILURE_THRESHOLD = 20;
+const TOURNAMENT_FAILURE_THRESHOLD = 20;
 
 /**
  * AWS HANDLERS
@@ -429,7 +431,7 @@ export async function runEval(recordInfo): Promise<{__error__?: string}> {
 
 }
 
-function mutateDesign(existing_design, paramMap, existingParams, newIDNum, newGeneration) {
+function mutateDesign(existing_design, paramMap, existingParams, newIDNum, newGeneration, mutation_sd) {
     // const newID = existing_design.id.split('_'); newID[newID.length - 1] =
     // newIDNum
     const new_design = {
@@ -466,7 +468,7 @@ function mutateDesign(existing_design, paramMap, existingParams, newIDNum, newGe
                     num_steps = (param.max - existing_design.params[param.name]) / param.step;
                 }
 
-                const c = GAUSSIAN_CONSTANT + GAUSSIAN_STEP_ADJUSTMENT / (num_steps + 1);
+                const c = mutation_sd + GAUSSIAN_STEP_ADJUSTMENT / (num_steps + 1);
                 const gaussian_mutation_val = Math.pow(Math.E, -1 * Math.pow(Math.random(), 2) / (2 * Math.pow(c, 2)));
                 const added_val = pos_neg * Math.floor(gaussian_mutation_val * (num_steps + 1));
 
@@ -526,35 +528,90 @@ function checkDuplicateDesign(newDesign, allParams): boolean {
 
 // function getRandomDesign(designList, tournamentSize, eliminateSize) { }
 
-// function tournamentSelect(liveDesignList: any[], deadDesignList: any[], tournament_size: number) {
-//     const liveDesignTournament = {};
-// }
-
-// ________________________ OLD TOURNAMENT CODE ________________________
-function tournamentSelect(liveDesignList: any[], deadDesignList: any[], tournament_size: number, survival_size: number) {
-    // select tournamentSize number of designs from live list
-    let selectedDesigns = [];
-    for (let i = 0; i < tournament_size; i++) {
-        if (liveDesignList.length === 0) {
-            break;
-        }
-        const randomIndex = Math.floor(Math.random() * liveDesignList.length);
-        selectedDesigns.push(liveDesignList.splice(randomIndex, 1)[0]);
+function tournamentSelect(liveDesignList: any[], deadDesignList: any[], population_size: number, tournament_size: number) {
+    const liveDesignTournament = [];
+    
+    for (let i = 0; i < liveDesignList.length; i++) {
+        liveDesignTournament.push({
+            GenID: liveDesignList[i].GenID,
+            score: liveDesignList[i].score,
+            rank: 0,
+            count: 0,
+            indices: {},
+        });
     }
-    // sort the selectedDesigns list in ascending order according to each design's
-    // score
-    selectedDesigns = selectedDesigns.sort((a, b) => a.score - b.score);
-    // mark the first <eliminateSize> entries as dead and add them to the
-    // deadDesignList, add the rest back to the liveDesignList
-    for (let j = 0; j < selectedDesigns.length; j++) {
-        if (j < survival_size) {
-            selectedDesigns[j].live = false;
-            deadDesignList.push(selectedDesigns[j]);
-        } else {
-            liveDesignList.push(selectedDesigns[j]);
+    
+    for (let i = 0; i < liveDesignList.length; i++) {
+        let failCount = 0;
+        while (liveDesignTournament[i].count < tournament_size) {
+            const randomIndex = Math.floor(Math.random() * liveDesignList.length);
+            if (randomIndex === i || liveDesignTournament[i].indices[randomIndex]) {
+                continue;
+            }
+            if (failCount < TOURNAMENT_FAILURE_THRESHOLD && liveDesignTournament[randomIndex].count >= tournament_size) {
+                failCount += 1;
+                continue;
+            }
+            failCount = 0;
+            if (liveDesignTournament[i].score > liveDesignTournament[randomIndex].score) {
+                liveDesignTournament[i].rank += 1;
+            }
+            liveDesignTournament[i].count += 1;
+            liveDesignTournament[i].indices[randomIndex] = true;
+            if (liveDesignTournament[randomIndex].count < tournament_size) {
+                liveDesignTournament[randomIndex].count += 1;
+                liveDesignTournament[randomIndex].indices[i] = true;
+                if (liveDesignTournament[randomIndex].score > liveDesignTournament[i].score) {
+                    liveDesignTournament[randomIndex].rank += 1;
+                }
+            }
+        }
+    }
+    
+    const sortedTournament = liveDesignTournament.sort((a, b) => {
+        if (a.rank === b.rank) {
+            return a.score - b.score;
+        }
+        return a.rank - b.rank;
+    });
+    
+    for (let i = 0; i < population_size; i++) {
+        for (let j = 0; j < liveDesignList.length; j++) {
+            if (sortedTournament[i].GenID === liveDesignList[j].GenID) {
+                liveDesignList[j].live = false;
+                deadDesignList.push(liveDesignList[j]);
+                liveDesignList.splice(j,1);
+                break;
+            }
         }
     }
 }
+
+// // ________________________ OLD TOURNAMENT CODE ________________________
+// function tournamentSelect(liveDesignList: any[], deadDesignList: any[], tournament_size: number, survival_size: number) {
+//     // select tournamentSize number of designs from live list
+//     let selectedDesigns = [];
+//     for (let i = 0; i < tournament_size; i++) {
+//         if (liveDesignList.length === 0) {
+//             break;
+//         }
+//         const randomIndex = Math.floor(Math.random() * liveDesignList.length);
+//         selectedDesigns.push(liveDesignList.splice(randomIndex, 1)[0]);
+//     }
+//     // sort the selectedDesigns list in ascending order according to each design's
+//     // score
+//     selectedDesigns = selectedDesigns.sort((a, b) => a.score - b.score);
+//     // mark the first <eliminateSize> entries as dead and add them to the
+//     // deadDesignList, add the rest back to the liveDesignList
+//     for (let j = 0; j < selectedDesigns.length; j++) {
+//         if (j < survival_size) {
+//             selectedDesigns[j].live = false;
+//             deadDesignList.push(selectedDesigns[j]);
+//         } else {
+//             liveDesignList.push(selectedDesigns[j]);
+//         }
+//     }
+// }
 
 async function getGenEvalFile(fileUrl): Promise<any> {
     const filePromise = new Promise((resolve) => {
@@ -698,7 +755,8 @@ export async function runGenEvalController(input) {
     const population_size = event.population_size;
     const max_designs = event.max_designs;
     const tournament_size = event.tournament_size;
-    const survival_size = event.survival_size;
+    const mutation_sd = event.mutation_sd? event.mutation_sd: 0.05;
+    // const survival_size = event.survival_size;
 
     const paramMap = {};
     for (const genUrl of event.genUrl) {
@@ -787,7 +845,7 @@ export async function runGenEvalController(input) {
             population_size * 2 - liveEntries.length < max_designs - designCount ? population_size * 2 - liveEntries.length : max_designs - designCount;
         console.log("number of mutations:", mutationNumber);
         for (let i = 0; i < mutationNumber; i++) {
-            const newDesign = mutateDesign(liveEntries[i], paramMap, existingParams, allEntries.length, newGeneration);
+            const newDesign = mutateDesign(liveEntries[i], paramMap, existingParams, allEntries.length, newGeneration, mutation_sd);
             console.log("new design:", newDesign);
             allEntries.push(newDesign);
             liveEntries.push(newDesign);
@@ -927,11 +985,13 @@ export async function runGenEvalController(input) {
             }
         });
 
-        // select the entries based on score
-        while (liveEntries.length > population_size) {
-            const elimSize = survival_size <= liveEntries.length - population_size ? survival_size : liveEntries.length - population_size;
-            tournamentSelect(liveEntries, deadEntries, tournament_size, elimSize);
-        }
+        tournamentSelect(liveEntries, deadEntries, population_size, tournament_size);
+
+        // // select the entries based on score
+        // while (liveEntries.length > population_size) {
+        //     const elimSize = survival_size <= liveEntries.length - population_size ? survival_size : liveEntries.length - population_size;
+        //     tournamentSelect(liveEntries, deadEntries, tournament_size, elimSize);
+        // }
 
         // update each live entries
         for (const entry of liveEntries) {
