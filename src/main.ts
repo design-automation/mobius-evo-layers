@@ -528,8 +528,12 @@ function checkDuplicateDesign(newDesign, allParams): boolean {
 
 // function getRandomDesign(designList, tournamentSize, eliminateSize) { }
 
-function tournamentSelect(liveDesignList: any[], deadDesignList: any[], population_size: number, tournament_size: number) {
+function tournamentSelect(liveDesignList: any[], deadDesignList: any[], population_size: number, settings_tournament_size: number) {
     const liveDesignTournament = [];
+    let tournament_size = settings_tournament_size;
+    if (tournament_size >= liveDesignList.length) {
+        tournament_size = liveDesignList.length - 1;
+    }
     
     for (let i = 0; i < liveDesignList.length; i++) {
         liveDesignTournament.push({
@@ -575,7 +579,8 @@ function tournamentSelect(liveDesignList: any[], deadDesignList: any[], populati
         return a.rank - b.rank;
     });
     
-    for (let i = 0; i < population_size; i++) {
+    const numDiscards = liveDesignList.length - population_size;
+    for (let i = 0; i < numDiscards; i++) {
         for (let j = 0; j < liveDesignList.length; j++) {
             if (sortedTournament[i].GenID === liveDesignList[j].GenID) {
                 liveDesignList[j].live = false;
@@ -647,20 +652,29 @@ async function getGenEvalFile(fileUrl): Promise<any> {
     return filePromise;
 }
 
-async function updateJobDB(jobID: string, run: boolean, status: string) {
+async function updateJobDB(jobID: string, run: boolean, status: string, history: any[]) {
     const jobDBUpdatePromise = new Promise<boolean>((resolve) => {
+        const runStart = history[history.length - 1].runStart
+        const runEnd = new Date();
+        if (history.length > 0) {
+            //@ts-ignore
+            history[history.length - 1].runTime = (runEnd - runStart) / 1000;
+            history[history.length - 1].runEnd = runEnd;
+            history[history.length - 1].status = status;
+        }
         DYNAMO_HANDLER.update(
             {
                 TableName: process.env.API_MOBIUSEVOGRAPHQL_JOBTABLE_NAME,
                 Key: {
                     id: jobID,
                 },
-                UpdateExpression: "set endedAt=:t, run=:r, jobStatus=:s, updatedAt=:u",
+                UpdateExpression: "set endedAt=:t, run=:r, jobStatus=:s, updatedAt=:u, history=:h",
                 ExpressionAttributeValues: {
                     ":t": new Date().toISOString(),
                     ":r": run,
                     ":s": status,
                     ":u": new Date().toISOString(),
+                    ":h": JSON.stringify(history)
                 },
                 ReturnValues: "UPDATED_NEW",
             },
@@ -756,6 +770,18 @@ export async function runGenEvalController(input) {
     const max_designs = event.max_designs;
     const tournament_size = event.tournament_size;
     const mutation_sd = event.mutation_sd? event.mutation_sd: 0.05;
+    const history = [{
+        runStart: new Date(),
+        runEnd: null,
+        runTime: null,
+        population_size: population_size,
+        max_designs: max_designs,
+        tournament_size: tournament_size,
+        mutation_sd: mutation_sd,
+        genUrl: event.genUrl,
+        evalUrl: event.evalUrl
+    }];
+    let updatedPastHistory = false;
     // const survival_size = event.survival_size;
 
     const paramMap = {};
@@ -801,6 +827,7 @@ export async function runGenEvalController(input) {
     await getJobEntries(event.id, allEntries, liveEntries, existingParams);
     let newGeneration = 0;
     liveEntries.forEach((entry) => (newGeneration = Math.max(entry.generation, newGeneration)));
+    newGeneration++;
     // run simulation
     let designCount = 0;
     let hasError = false;
@@ -810,7 +837,7 @@ export async function runGenEvalController(input) {
         }
         // check if the job should still be running:  _ check JOB_DB for the job, if
         // job.run is not true, stop the run and return
-        const runCheckPromise = new Promise((resolve) => {
+        const getJobPromise = new Promise((resolve) => {
             DYNAMO_HANDLER.get(
                 {
                     TableName: process.env.API_MOBIUSEVOGRAPHQL_JOBTABLE_NAME,
@@ -824,25 +851,40 @@ export async function runGenEvalController(input) {
                         resolve(null);
                     } else {
                         console.log("... run check for", event.id, "; items:", record);
-                        resolve(record.Item.run);
+                        resolve(record.Item);
                     }
                 }
             );
         }).catch((err) => {
             throw err;
         });
-        const runCheck = await runCheckPromise;
+        const jobItem: any = await getJobPromise;
+        const runCheck = jobItem.run;
+        if (!updatedPastHistory) {
+            try {
+                if (jobItem.history) {
+                    const pastHistory = JSON.parse(jobItem.history);
+                    pastHistory.forEach(historyItem => history.splice(history.length - 1, 0, historyItem))
+                }
+                updatedPastHistory = true;
+            } catch(ex) {}
+        }
         if (!runCheck) {
             await Promise.all(updateDynamoPromises);
-            await updateJobDB(event.id, false, "cancelled");
+            await updateJobDB(event.id, false, "cancelled", history);
             console.log("run cancelled !!!");
             return false;
         }
 
+        // // mutate designs until reaching max number of designs or twice the population
+        // const mutationNumber =
+        //     population_size * 2 - liveEntries.length < max_designs - designCount ? population_size * 2 - liveEntries.length : max_designs - designCount;
+
         // mutate designs until reaching max number of designs or twice the population
-        // size
-        const mutationNumber =
-            population_size * 2 - liveEntries.length < max_designs - designCount ? population_size * 2 - liveEntries.length : max_designs - designCount;
+        let mutationNumber = liveEntries.length < max_designs - designCount? liveEntries.length: max_designs - designCount;
+        if (mutationNumber < population_size) {
+            mutationNumber = population_size * 2 - liveEntries.length;
+        }
         console.log("number of mutations:", mutationNumber);
         for (let i = 0; i < mutationNumber; i++) {
             const newDesign = mutateDesign(liveEntries[i], paramMap, existingParams, allEntries.length, newGeneration, mutation_sd);
@@ -1069,9 +1111,9 @@ export async function runGenEvalController(input) {
         .then(() => console.log("updateDynamoPromises finishes"))
         .catch((err) => console.log(err));
     if (hasError) {
-        await updateJobDB(event.id, false, "cancelled");
+        await updateJobDB(event.id, false, "cancelled", history);
     } else {
-        await updateJobDB(event.id, false, "completed");
+        await updateJobDB(event.id, false, "completed", history);
     }
     console.log("process complete");
     return true;
