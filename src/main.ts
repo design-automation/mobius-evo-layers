@@ -831,6 +831,8 @@ export async function runGenEvalController(input) {
     // run simulation
     let designCount = 0;
     let hasError = false;
+
+    let initializeCheck = true;
     while (designCount < max_designs) {
         if (designCount === 0) {
             designCount = allEntries.length;
@@ -880,19 +882,19 @@ export async function runGenEvalController(input) {
         // const mutationNumber =
         //     population_size * 2 - liveEntries.length < max_designs - designCount ? population_size * 2 - liveEntries.length : max_designs - designCount;
 
-        // mutate designs until reaching max number of designs or twice the population
-        let mutationNumber = liveEntries.length < max_designs - designCount? liveEntries.length: max_designs - designCount;
-        if (mutationNumber < population_size) {
-            mutationNumber = population_size * 2 - liveEntries.length;
+        if (!initializeCheck) {
+            // mutate designs until reaching max number of designs or twice the population
+            let mutationNumber = (liveEntries.length < (max_designs - designCount))? liveEntries.length: (max_designs - designCount);
+            console.log("number of mutations:", mutationNumber);
+            for (let i = 0; i < mutationNumber; i++) {
+                const newDesign = mutateDesign(liveEntries[i], paramMap, existingParams, allEntries.length, newGeneration, mutation_sd);
+                console.log("new design:", newDesign);
+                allEntries.push(newDesign);
+                liveEntries.push(newDesign);
+            }
+            newGeneration++;
         }
-        console.log("number of mutations:", mutationNumber);
-        for (let i = 0; i < mutationNumber; i++) {
-            const newDesign = mutateDesign(liveEntries[i], paramMap, existingParams, allEntries.length, newGeneration, mutation_sd);
-            console.log("new design:", newDesign);
-            allEntries.push(newDesign);
-            liveEntries.push(newDesign);
-        }
-        newGeneration++;
+        initializeCheck = false;
         designCount = allEntries.length;
 
         // for each of the live entries, run gen then run eval sequentially. each entry
@@ -1037,36 +1039,50 @@ export async function runGenEvalController(input) {
 
         // update each live entries
         for (const entry of liveEntries) {
+            let updateParamEntry;
             if (!entry.scoreWritten) {
                 entry.scoreWritten = true;
-                const updateParamEntry = {
+                updateParamEntry = {
                     TableName: process.env.API_MOBIUSEVOGRAPHQL_GENEVALPARAMTABLE_NAME,
                     Key: {
                         id: entry.id,
                     },
-                    UpdateExpression: "set score=:sc, evalResult=:ev, updatedAt=:u",
+                    UpdateExpression: "set score=:sc, evalResult=:ev, updatedAt=:u, survivalGeneration=:sg",
                     ExpressionAttributeValues: {
                         ":sc": entry.score,
                         ":ev": entry.evalResult,
                         ":u": new Date().toISOString(),
+                        ":sg": newGeneration - 1
                     },
                     ReturnValues: "UPDATED_NEW",
                 };
-                const p = new Promise((resolve) => {
-                    DYNAMO_HANDLER.update(updateParamEntry, function (err, data) {
-                        if (err) {
-                            console.log("Error placing data (live entry's score, evalResult):", err);
-                            resolve(null);
-                        } else {
-                            resolve(null);
-                        }
-                    });
-                }).catch((err) => {
-                    console.log("live entry writing error:", err);
-                    throw err;
-                });
-                updateDynamoPromises.push(p);
+            } else {
+                updateParamEntry = {
+                    TableName: process.env.API_MOBIUSEVOGRAPHQL_GENEVALPARAMTABLE_NAME,
+                    Key: {
+                        id: entry.id,
+                    },
+                    UpdateExpression: "set survivalGeneration=:sg",
+                    ExpressionAttributeValues: {
+                        ":sg": newGeneration - 1
+                    },
+                    ReturnValues: "UPDATED_NEW",
+                };
             }
+            const p = new Promise((resolve) => {
+                DYNAMO_HANDLER.update(updateParamEntry, function (err, data) {
+                    if (err) {
+                        console.log("Error placing data (live entry's score, evalResult):", err);
+                        resolve(null);
+                    } else {
+                        resolve(null);
+                    }
+                });
+            }).catch((err) => {
+                console.log("live entry writing error:", err);
+                throw err;
+            });
+            updateDynamoPromises.push(p);
         }
 
         // update each dead entries
