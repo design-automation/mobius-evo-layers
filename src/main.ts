@@ -751,10 +751,89 @@ async function getJobEntries(jobID, allEntries, liveEntries, existingParams) {
     }
 }
 
+async function removeJobData(record) {
+    const allPromises = [];
+    const event = AWS.DynamoDB.Converter.unmarshall(record.dynamodb.OldImage);
+    console.log("Unmarshalled Record to be removed:", event);
+
+    const allParams = await DYNAMO_HANDLER.query(
+        {
+            TableName: process.env.API_MOBIUSEVOGRAPHQL_GENEVALPARAMTABLE_NAME,
+            IndexName: "byJobID",
+            KeyConditionExpression: "JobID = :job ",
+            ExpressionAttributeValues: {
+                ":job": event.id,
+            },
+        }
+    ).promise();
+
+    console.log('allParams length', allParams? allParams.Count : null)
+
+    if (allParams && allParams.Items && allParams.Items.length > 0) {
+        allParams.Items.forEach( p => {
+            allPromises.push(DYNAMO_HANDLER.delete(
+                {
+                    TableName: 'GenEvalParam-t3vtntjcprhkbk4lak5sqtfcpm-dev',
+                    Key: {
+                        id: p.id
+                    }
+                }
+            ).promise())
+        })
+    }
+
+    const s3Query: any = {
+        Bucket: process.env.STORAGE_MOBIUSEVOUSERFILES_BUCKETNAME,
+        Prefix: `public/${event.owner}/${event.id}`,
+    };
+    const allKeys = [];
+
+    async function listAllKeys() {
+        const p = new Promise( resolve =>
+            S3_HANDLER.listObjectsV2(s3Query, async function (err, data) {
+                if (err) {
+                    console.log(err, err.stack); // an error occurred
+                } else {
+                    const contents = data.Contents;
+                    if (contents.length > 0) {
+                        const keyList = []
+                        contents.forEach(function (content) {
+                            allKeys.push(content.Key)
+                            keyList.push({
+                                Key: content.Key
+                            });
+                        });
+                        allPromises.push(S3_HANDLER.deleteObjects({
+                            Bucket: s3Query.Bucket, 
+                            Delete: {
+                                Objects: keyList, 
+                                Quiet: false
+                            }
+                        }).promise())
+                    }
+                    if (data.IsTruncated) {
+                        s3Query.ContinuationToken = data.NextContinuationToken;
+                        console.log("get further list...");
+                        await listAllKeys();
+                    }
+                    resolve(null);
+                }
+            })
+        )
+        await p;
+    }
+    await listAllKeys()
+    console.log('allKeys length', allKeys.length)
+    await Promise.all(allPromises);
+}
+
 export async function runGenEvalController(input) {
     console.log("~~~ input: ", input);
     const record = input.Records[0];
     if (record.eventName !== "INSERT" && record.eventName !== "MODIFY") {
+        if (record.eventName === "REMOVE") {
+            await removeJobData(record)
+        }
         return;
     }
     console.log("DynamoDB Record: %j", record.dynamodb);

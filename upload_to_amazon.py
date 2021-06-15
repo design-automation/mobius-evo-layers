@@ -167,7 +167,7 @@ def upload_to_amazon(zipfile, funcName):
 
     r = lambda_client.delete_layer_version(
         LayerName=funcName,
-        VersionNumber=version - 4,
+        VersionNumber=version - 2,
     )
 
     print('delete layer completed')
