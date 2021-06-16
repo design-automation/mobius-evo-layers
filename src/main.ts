@@ -752,35 +752,55 @@ async function getJobEntries(jobID, allEntries, liveEntries, existingParams) {
 }
 
 async function removeJobData(record) {
-    const allPromises = [];
+    const getItemsPromises = [];
+    const deleteObjectPromises = [];
     const event = AWS.DynamoDB.Converter.unmarshall(record.dynamodb.OldImage);
     console.log("Unmarshalled Record to be removed:", event);
 
-    const allParams = await DYNAMO_HANDLER.query(
-        {
-            TableName: process.env.API_MOBIUSEVOGRAPHQL_GENEVALPARAMTABLE_NAME,
-            IndexName: "byJobID",
-            KeyConditionExpression: "JobID = :job ",
-            ExpressionAttributeValues: {
-                ":job": event.id,
-            },
-        }
-    ).promise();
+    const paramsQuery: any = {
+        TableName: process.env.API_MOBIUSEVOGRAPHQL_GENEVALPARAMTABLE_NAME,
+        IndexName: "byJobID",
+        KeyConditionExpression: "JobID = :job ",
+        ExpressionAttributeValues: {
+            ":job": event.id,
+        },
+    };
 
-    console.log('allParams length', allParams? allParams.Count : null)
-
-    if (allParams && allParams.Items && allParams.Items.length > 0) {
-        allParams.Items.forEach( p => {
-            allPromises.push(DYNAMO_HANDLER.delete(
-                {
-                    TableName: 'GenEvalParam-t3vtntjcprhkbk4lak5sqtfcpm-dev',
-                    Key: {
-                        id: p.id
+    async function queryParams() {
+        const p = new Promise( resolve => {
+            DYNAMO_HANDLER.query(paramsQuery, onQuery);
+            async function onQuery(err, data) {
+                if (err) {
+                    console.error("Unable to scan the table. Error JSON:", JSON.stringify(err, null, 2));
+                } else {
+                    // print all the movies
+                    console.log("Query succeeded.");
+                    console.log("  ", data.Count);
+                    data.Items.forEach(function(param) {
+                        deleteObjectPromises.push(DYNAMO_HANDLER.delete(
+                            {
+                                TableName: process.env.API_MOBIUSEVOGRAPHQL_GENEVALPARAMTABLE_NAME,
+                                Key: {
+                                    id: param.id
+                                }
+                            }
+                        ).promise())
+                    });
+                    // continue scanning if we have more movies, because
+                    // scan can retrieve a maximum of 1MB of data
+                    if (typeof data.LastEvaluatedKey != "undefined") {
+                        console.log("Scanning for more...");
+                        paramsQuery.ExclusiveStartKey = data.LastEvaluatedKey;
+                        await queryParams();
                     }
                 }
-            ).promise())
+                resolve(null);
+            }
         })
+        return p;
     }
+    getItemsPromises.push(queryParams());
+
 
     const s3Query: any = {
         Bucket: process.env.STORAGE_MOBIUSEVOUSERFILES_BUCKETNAME,
@@ -803,7 +823,7 @@ async function removeJobData(record) {
                                 Key: content.Key
                             });
                         });
-                        allPromises.push(S3_HANDLER.deleteObjects({
+                        deleteObjectPromises.push(S3_HANDLER.deleteObjects({
                             Bucket: s3Query.Bucket, 
                             Delete: {
                                 Objects: keyList, 
@@ -816,15 +836,16 @@ async function removeJobData(record) {
                         console.log("get further list...");
                         await listAllKeys();
                     }
-                    resolve(null);
                 }
+                resolve(null);
             })
         )
-        await p;
+        return p;
     }
-    await listAllKeys()
-    console.log('allKeys length', allKeys.length)
-    await Promise.all(allPromises);
+    getItemsPromises.push(listAllKeys());
+    await Promise.all(getItemsPromises);
+    await Promise.all(deleteObjectPromises);
+    console.log('allKeys count:', allKeys.length)
 }
 
 export async function runGenEvalController(input) {

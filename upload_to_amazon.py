@@ -39,6 +39,8 @@ mobius_directory = 'C:\\Users\\akibdpt\\Documents\\Angular\\mobius-parametric-mo
 # the lambda function name
 MAIN_LAYER = 'arn:aws:lambda:us-east-1:114056409474:layer:evo_layer'
 
+S3_BUCKET = 'mobius-evo-userfiles131353-dev'
+
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # change this FUNC_NAME to whichever function you want to update
 FUNC_NAME = MAIN_LAYER
@@ -131,24 +133,29 @@ def upload_to_amazon(zipfile, funcName):
                     region_name='us-east-1',
                     aws_access_key_id = aws_access_key_id,
                     aws_secret_access_key = aws_secret_access_key)
-    # r = lambda_client.list_layer_versions(
-    #     CompatibleRuntime='nodejs14.x',
-    #     LayerName=funcName,
-    #     MaxItems=10
-    # )
+    s3_client = boto3.client('s3',
+                    aws_access_key_id = aws_access_key_id,
+                    aws_secret_access_key = aws_secret_access_key)
+    s3_client.upload_file('./zipped_file/zip_layer.zip', S3_BUCKET, 'temp_zip_layer.zip')
+    print('Uploading to S3 completed')
+
     r = lambda_client.publish_layer_version(
         LayerName=funcName,
         Description='evo layer',
         Content={
-            'ZipFile': zipfile
+            'S3Bucket': S3_BUCKET,
+            'S3Key': 'temp_zip_layer.zip'
         },
         CompatibleRuntimes=['nodejs14.x']
     )
     version = r['Version']
-    print('Uploading completed')
+    print('Adding Layer Version completed')
     for i in r:
         print('   ', i ,':', r[i])
     print()
+
+    s3_client.delete_object(Bucket= S3_BUCKET, Key='temp_zip_layer.zip')
+    print('Delete temp S3 file completed')
 
     print('Updating version permission')
     statement = 'p_' + re.sub(r'[\.\:\-\s]', '_', str(datetime.datetime.now()))
@@ -201,10 +208,10 @@ def update_layer_permission(funcName, version):
 
 if __name__ == '__main__':
     # copy_from_mobius()
-    buildcheck = build_code()
-    if buildcheck:
-        zipcheck = zipdir()
-        if zipcheck:
+    # buildcheck = build_code()
+    # if buildcheck:
+    #     zipcheck = zipdir()
+    #     if zipcheck:
             zippedFile = open('zipped_file/zip_layer.zip', 'rb').read()
             upload_to_amazon(zippedFile, FUNC_NAME)
 
