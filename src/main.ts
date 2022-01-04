@@ -1,81 +1,9 @@
 require("module-alias/register");
 import AWS from "aws-sdk";
 import fetch from "node-fetch";
-import JSZip from "jszip";
 import { XMLHttpRequest } from "xmlhttprequest";
-// import * as fs from "fs";
-// import * as circularJSON from "circular-json";
-
-
-import * as Modules from "@assets/core/modules";
-import { _parameterTypes, _varString } from "@assets/core/modules";
-import { GIModel } from "@libs/geo-info/GIModel";
-
-// import { CodeUtils } from "./model/code/code.utils";
-// import { IFlowchart, FlowchartUtils } from "./model/flowchart";
-// import { IProcedure, ProcedureTypes } from "./model/procedure";
-// import { INode } from "./model/node";
-// import { checkArgInput } from "./utils/parser";
-
-export const pythonListFunc = `
-function pythonList(x, l){
-    if (x < 0) {
-        return x + l;
-    }
-    return x;
-}
-`;
-// export const mergeInputsFunc = ` function mergeInputs(models){     let result
-// = __modules__.${_parameterTypes.new}();     try {         result.debug =
-// __debug__;     } catch (ex) {}     for (let model of models){
-// __modules__.${_parameterTypes.merge}(result, model);     }     return result;
-// }
-export const mergeInputsFunc = `
-function mergeInputs(models){
-    let result = null;
-    if (models.length === 0) {
-        result = __modules__.${_parameterTypes.new}();
-    } else if (models.length === 1) {
-        result = models[0].clone();
-    } else {
-        result = models[0].clone();
-        for (let i = 1; i < models.length; i++) {
-            __modules__.${_parameterTypes.merge}(result, models[i]);
-        }
-    }
-    try {
-        result.debug = __debug__;
-    } catch (ex) {}
-    return result;
-}
-function duplicateModel(model){
-    const result = model.clone();
-    try {
-        result.debug = __debug__;
-    } catch (ex) {}
-    return result;
-}
-`;
-const printFuncString = `
-function printFunc(_console, name, value){
-    let val;
-    if (!value) {
-        val = value;
-    } else if (typeof value === 'number' || value === undefined) {
-        val = value;
-    } else if (typeof value === 'string') {
-        val = '"' + value + '"';
-    } else if (value.constructor === [].constructor) {
-        val = JSON.stringify(value);
-    } else if (value.constructor === {}.constructor) {
-        val = JSON.stringify(value);
-    } else {
-        val = value;
-    }
-    _console.push('_ ' + name + ': ' + val );
-    return val;
-}
-`;
+import { Funcs, _parameterTypes } from '@design-automation/mobius-sim-funcs';
+import * as Inlines from '@design-automation/mobius-inline-funcs';
 
 /**
  * GLOBAL CONSTANTS
@@ -102,7 +30,7 @@ const LAMBDA_HANDLER = new AWS.Lambda({
     },
 });
 
-function getModelString(model: GIModel): string {
+function getModelString(model: any): string {
     let model_data = model.exportGI(null);
     model_data = model_data.replace(/\\/g, "\\\\\\"); // TODO temporary fix
     return model_data;
@@ -148,7 +76,7 @@ export async function runJavascriptFile(event: { file: string; parameters: {}; m
                 }
                 const postfixString = `\n}\nreturn __main_func;`;
                 const fn = new Function(prefixString + splittedString[1] + postfixString);
-                const result = await fn()(Modules, ...val1);
+                const result = await fn()(Funcs, Inlines, ...val1);
                 result.model = getModelString(result.model);
                 console.log(result.model);
                 resolve("successful");
@@ -169,7 +97,7 @@ export async function runJavascriptFileTest(event: { file: string; parameters: [
         })
         .then(async (dataFile) => {
             const fn = new Function(dataFile.replace(/\\/g, ""));
-            const result = await fn()(Modules);
+            const result = await fn()(Funcs, Inlines);
             console.log(result.result);
         });
 }
@@ -200,7 +128,7 @@ async function testExecuteJSFile(file, model = null, params = null) {
     }
     const postfixString = `\n}\nreturn __main_func;`;
     const fn = new Function(prefixString + splittedString[1] + postfixString);
-    const result = await fn()(Modules, ...val1);
+    const result = await fn()(Funcs, Inlines, ...val1);
     return result;
 }
 export async function testGenEval(event: { genFile: string; evalFile: string; genParams: any }) {
@@ -296,7 +224,7 @@ export async function runGen(data): Promise<{__success__: boolean, __error__?: s
             const prefixString = `async function __main_func(__modules__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
             const postfixString = `\n}\nreturn __main_func;`;
             const fn = new Function(prefixString + splittedString[1] + postfixString);
-            const result = await fn()(Modules, ...val1);
+            const result = await fn()(Funcs, Inlines, ...val1);
             const model = getModelString(result.model).replace(/\\/g, "");
 
             let checkModelDB = false;
@@ -400,7 +328,7 @@ export async function runEval(recordInfo): Promise<{__error__?: string}> {
             const prefixString = `async function __main_func(__modules__, ` + val0 + ") {\n__debug__ = false;\n__model__ = `" + data + "`;\n";
             const postfixString = `\n}\nreturn __main_func;`;
             const fn = new Function(prefixString + splittedString[1] + postfixString);
-            const result = await fn()(Modules, ...val1);
+            const result = await fn()(Funcs, Inlines, ...val1);
             const model = getModelString(result.model).replace(/\\/g, "");
             S3_HANDLER.putObject(
                 {
