@@ -1,8 +1,7 @@
-require("module-alias/register");
 import AWS from "aws-sdk";
 import fetch from "node-fetch";
 import { XMLHttpRequest } from "xmlhttprequest";
-import { Funcs, _parameterTypes } from '@design-automation/mobius-sim-funcs';
+import { Funcs } from '@design-automation/mobius-sim-funcs';
 import * as Inlines from '@design-automation/mobius-inline-funcs';
 
 /**

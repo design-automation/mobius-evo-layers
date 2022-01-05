@@ -37,7 +37,7 @@ aws_secret_access_key = __AMAZON_KEY__.aws_secret_access_key
 mobius_directory = 'C:\\Users\\akibdpt\\Documents\\Angular\\mobius-parametric-modeller-dev-0-7'
 
 # the lambda function name
-MAIN_LAYER = 'arn:aws:lambda:us-east-1:114056409474:layer:evo_layer'
+MAIN_LAYER = 'arn:aws:lambda:us-east-1:114056409474:layer:evo_layer_09'
 
 S3_BUCKET = 'mobius-evo-userfiles131353-dev'
 
@@ -45,53 +45,6 @@ S3_BUCKET = 'mobius-evo-userfiles131353-dev'
 # change this FUNC_NAME to whichever function you want to update
 FUNC_NAME = MAIN_LAYER
 
-
-def copy_from_mobius():
-    print('\n\nCopying files from Mobius...')
-
-    current_working_dir = os.getcwd()
-
-    core_dir = mobius_directory + '\\src\\assets\\core'
-    libs_dir = mobius_directory + '\\src\\assets\\libs'
-    destination = current_working_dir + '\\src'
-
-    try:
-        shutil.rmtree(current_working_dir + '\\src\\core')
-    except Exception:
-        pass
-    try:
-        shutil.rmtree(current_working_dir + '\\src\\libs')
-    except Exception:
-        pass
-    os.mkdir(current_working_dir + '\\src\\core')
-    os.mkdir(current_working_dir + '\\src\\libs')
-
-    copy_files(core_dir, destination)
-    copy_files(libs_dir, destination)
-
-    packageJSONFile = os.path.join(current_working_dir, dist_package_json_file)
-    packageJSONDest = os.path.join(current_working_dir, 'dist\\package.json')
-    if not os.path.isdir(os.path.join(current_working_dir,'dist')):
-        os.mkdir(os.path.join(current_working_dir,'dist'))
-    shutil.copy(packageJSONFile, packageJSONDest)
-    print('Copying completed')
-
-def copy_files(fromDir, toDir):
-    os_walk_dir = os.walk(fromDir)
-    for root, dirs, files in os_walk_dir:
-
-        subDir = root.split('assets')[-1]
-        for folder in dirs:
-            newDir = os.path.join(toDir + subDir, folder)
-            if os.path.isfile(newDir):
-                os.remove(newDir)
-            if not os.path.isdir(newDir):
-                os.mkdir(newDir)
-        for f in files:
-            core_f = os.path.join(root, f)
-            print('    copying:', os.path.join(subDir, f))
-            if os.path.isfile(core_f):
-                shutil.copy(core_f, toDir + subDir)
 
 def build_code():
     print('\n\nBuilding code...')
@@ -208,10 +161,10 @@ def update_layer_permission(funcName, version):
 
 if __name__ == '__main__':
     # copy_from_mobius()
-    # buildcheck = build_code()
-    # if buildcheck:
-    #     zipcheck = zipdir()
-    #     if zipcheck:
+    buildcheck = build_code()
+    if buildcheck:
+        zipcheck = zipdir()
+        if zipcheck:
             zippedFile = open('zipped_file/zip_layer.zip', 'rb').read()
             upload_to_amazon(zippedFile, FUNC_NAME)
 
