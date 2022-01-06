@@ -2,7 +2,7 @@ import AWS from "aws-sdk";
 import fetch from "node-fetch";
 import { XMLHttpRequest } from "xmlhttprequest";
 import { Funcs } from '@design-automation/mobius-sim-funcs';
-import * as Inlines from '@design-automation/mobius-inline-funcs';
+import { Inlines } from '@design-automation/mobius-inline-funcs';
 
 /**
  * GLOBAL CONSTANTS
@@ -52,7 +52,7 @@ export async function runJavascriptFile(event: { file: string; parameters: {}; m
                     for (let i = 1; i < argStrings.length - 1; i++) {
                         args.push(JSON.parse(argStrings[i]));
                     }
-                    args.push(JSON.parse(argStrings[argStrings.length - 1].split("function")[0].split("async")[0]));
+                    args.push(JSON.parse(argStrings[argStrings.length - 1].split("const __modules__")[0].split("async")[0]));
                 }
                 const val0 = args.map((arg) => arg.name);
                 const val1 = args.map((arg) => {
@@ -69,9 +69,9 @@ export async function runJavascriptFile(event: { file: string; parameters: {}; m
                     }
                     return numVal;
                 });
-                let prefixString = `async function __main_func(__modules__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
+                let prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
                 if (event.model) {
-                    prefixString = `async function __main_func(__modules__, ` + val0 + `) {\n__debug__ = false;\n__model__ = ` + event.model + `;\n`;
+                    prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + `) {\n__debug__ = false;\n__model__ = ` + event.model + `;\n`;
                 }
                 const postfixString = `\n}\nreturn __main_func;`;
                 const fn = new Function(prefixString + splittedString[1] + postfixString);
@@ -108,7 +108,7 @@ async function testExecuteJSFile(file, model = null, params = null) {
         for (let i = 1; i < argStrings.length - 1; i++) {
             args.push(JSON.parse(argStrings[i]));
         }
-        args.push(JSON.parse(argStrings[argStrings.length - 1].split("function")[0].split("async")[0]));
+        args.push(JSON.parse(argStrings[argStrings.length - 1].split("const __modules__")[0].split("async")[0]));
     }
     const val0 = args.map((arg) => arg.name);
     const val1 = args.map((arg) => {
@@ -121,9 +121,9 @@ async function testExecuteJSFile(file, model = null, params = null) {
         }
         return numVal;
     });
-    let prefixString = `async function __main_func(__modules__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
+    let prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
     if (model) {
-        prefixString = `async function __main_func(__modules__, ` + val0 + `) {\n__debug__ = false;\n__model__ = \`${model}\`;\n`;
+        prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + `) {\n__debug__ = false;\n__model__ = \`${model}\`;\n`;
     }
     const postfixString = `\n}\nreturn __main_func;`;
     const fn = new Function(prefixString + splittedString[1] + postfixString);
@@ -198,7 +198,7 @@ export async function runGen(data): Promise<{__success__: boolean, __error__?: s
                 for (let i = 1; i < argStrings.length - 1; i++) {
                     args.push(JSON.parse(argStrings[i]));
                 }
-                args.push(JSON.parse(argStrings[argStrings.length - 1].split("function")[0].split("async")[0]));
+                args.push(JSON.parse(argStrings[argStrings.length - 1].split("const __modules__")[0].split("async")[0]));
             }
             const val0 = args.map((arg) => arg.name);
             const val1 = args.map((arg) => {
@@ -220,7 +220,7 @@ export async function runGen(data): Promise<{__success__: boolean, __error__?: s
             // result = fn(Modules, ...val1); const model =
             // JSON.stringify(result.model.getData()).replace(/\\/g, '\\\\');
 
-            const prefixString = `async function __main_func(__modules__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
+            const prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
             const postfixString = `\n}\nreturn __main_func;`;
             const fn = new Function(prefixString + splittedString[1] + postfixString);
             const result = await fn()(Funcs, Inlines, ...val1);
@@ -319,12 +319,12 @@ export async function runEval(recordInfo): Promise<{__error__?: string}> {
                 for (let i = 1; i < argStrings.length - 1; i++) {
                     args.push(JSON.parse(argStrings[i]));
                 }
-                args.push(JSON.parse(argStrings[argStrings.length - 1].split("function")[0].split("async")[0]));
+                args.push(JSON.parse(argStrings[argStrings.length - 1].split("const __modules__")[0].split("async")[0]));
             }
             const val0 = args.map((arg) => arg.name);
             const val1 = args.map((arg) => arg.value);
 
-            const prefixString = `async function __main_func(__modules__, ` + val0 + ") {\n__debug__ = false;\n__model__ = `" + data + "`;\n";
+            const prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + ") {\n__debug__ = false;\n__model__ = `" + data + "`;\n";
             const postfixString = `\n}\nreturn __main_func;`;
             const fn = new Function(prefixString + splittedString[1] + postfixString);
             const result = await fn()(Funcs, Inlines, ...val1);

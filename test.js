@@ -1,4 +1,4 @@
-// import * as main from './nodejs/main.js';
+// import * as main from './nodejs/index.js';
 const main = require('./nodejs/main.js')
 
 main.runJavascriptFile({
