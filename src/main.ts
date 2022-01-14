@@ -866,21 +866,48 @@ export async function runGenEvalController(input) {
     if (typeof event.genUrl === "string") {
         return false;
     }
-    const population_size = event.population_size;
-    const max_designs = event.max_designs;
-    const tournament_size = event.tournament_size;
-    const mutation_sd = event.mutation_sd? event.mutation_sd: 0.05;
-    const history = [{
-        runStart: new Date(),
-        runEnd: null,
-        runTime: null,
-        population_size: population_size,
-        max_designs: max_designs,
-        tournament_size: tournament_size,
-        mutation_sd: mutation_sd,
-        genUrl: event.genUrl,
-        evalUrl: event.evalUrl
-    }];
+
+    console.log("Run Settings:", event.run_settings)
+    let population_size, max_designs, tournament_size, mutation_sd, history;
+
+    if (event.run_settings) {
+        const run_settings = JSON.parse(event.run_settings);
+        population_size = run_settings.population_size;
+        max_designs = run_settings.max_designs;
+        tournament_size = run_settings.tournament_size;
+        mutation_sd = run_settings.mutation_sd;
+        history = [{
+            runStart: new Date(),
+            runEnd: null,
+            runTime: null,
+            genUrl: event.genUrl,
+            evalUrl: event.evalUrl,
+            run_settings: run_settings
+        }];
+    } else {
+        population_size = event.population_size;
+        max_designs = event.max_designs;
+        tournament_size = event.tournament_size;
+        mutation_sd = event.mutation_sd? event.mutation_sd: 0.05;
+        history = [{
+            runStart: new Date(),
+            runEnd: null,
+            runTime: null,
+            genUrl: event.genUrl,
+            evalUrl: event.evalUrl,
+            run_settings: {
+                population_size: population_size,
+                max_designs: max_designs,
+                tournament_size: tournament_size,
+                mutation_sd: mutation_sd,
+            }
+        }];
+    }
+    console.log("population_size:", population_size)
+    console.log("max_designs:", max_designs)
+    console.log("tournament_size:", tournament_size)
+    console.log("mutation_sd:", mutation_sd)
+
     let updatedPastHistory = false;
     // const survival_size = event.survival_size;
 
