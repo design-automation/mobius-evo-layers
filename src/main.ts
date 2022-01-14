@@ -1,8 +1,8 @@
-import AWS from "aws-sdk";
-import fetch from "node-fetch";
-import { XMLHttpRequest } from "xmlhttprequest";
+import { InlineClass } from '@design-automation/mobius-inline-funcs';
 import { Funcs } from '@design-automation/mobius-sim-funcs';
-import { Inlines } from '@design-automation/mobius-inline-funcs';
+import AWS from 'aws-sdk';
+import fetch from 'node-fetch';
+import { XMLHttpRequest } from 'xmlhttprequest';
 
 /**
  * GLOBAL CONSTANTS
@@ -52,7 +52,7 @@ export async function runJavascriptFile(event: { file: string; parameters: {}; m
                     for (let i = 1; i < argStrings.length - 1; i++) {
                         args.push(JSON.parse(argStrings[i]));
                     }
-                    args.push(JSON.parse(argStrings[argStrings.length - 1].split("const __modules__")[0].split("async")[0]));
+                    args.push(JSON.parse(argStrings[argStrings.length - 1].split("const mfn")[0].split("async")[0]));
                 }
                 const val0 = args.map((arg) => arg.name);
                 const val1 = args.map((arg) => {
@@ -65,17 +65,27 @@ export async function runJavascriptFile(event: { file: string; parameters: {}; m
                     }
                     const numVal = Number(arg.value)
                     if (!numVal && numVal !== 0) {
-                        return arg.value
+                        if (typeof arg.value !== 'string') {
+                            return arg.value;
+                        }
+                        let val = arg.value;
+                        if (val.startsWith('"') || val.startsWith('\'') || val.startsWith('`')) {
+                            val = val.slice(1)
+                        }
+                        if (val.endsWith('"') || val.endsWith('\'') || val.endsWith('`')) {
+                            val = val.slice(0, -1)
+                        }
+                        return val
                     }
                     return numVal;
                 });
-                let prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
+                let prefixString = `async function __main_func(mfn, ifn, ` + val0 + `) {\n__model__ = null;\n`;
                 if (event.model) {
-                    prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + `) {\n__debug__ = false;\n__model__ = ` + event.model + `;\n`;
+                    prefixString = `async function __main_func(mfn, ifn, ` + val0 + `) {\n__model__ = ` + event.model + `;\n`;
                 }
                 const postfixString = `\n}\nreturn __main_func;`;
                 const fn = new Function(prefixString + splittedString[1] + postfixString);
-                const result = await fn()(Funcs, Inlines, ...val1);
+                const result = await fn()(new Funcs(), new InlineClass(true), ...val1);
                 result.model = getModelString(result.model);
                 console.log(result.model);
                 resolve("successful");
@@ -86,20 +96,6 @@ export async function runJavascriptFile(event: { file: string; parameters: {}; m
     return await p;
 }
 
-export async function runJavascriptFileTest(event: { file: string; parameters: [] }) {
-    fetch(event.file)
-        .then((res) => {
-            if (!res.ok) {
-                return "";
-            }
-            return res.text();
-        })
-        .then(async (dataFile) => {
-            const fn = new Function(dataFile.replace(/\\/g, ""));
-            const result = await fn()(Funcs, Inlines);
-            console.log(result.result);
-        });
-}
 async function testExecuteJSFile(file, model = null, params = null) {
     const splittedString = file.split("/** * **/");
     const argStrings = splittedString[0].split("// Parameter:");
@@ -127,7 +123,7 @@ async function testExecuteJSFile(file, model = null, params = null) {
     }
     const postfixString = `\n}\nreturn __main_func;`;
     const fn = new Function(prefixString + splittedString[1] + postfixString);
-    const result = await fn()(Funcs, Inlines, ...val1);
+    const result = await fn()(Funcs, InlineClass, ...val1);
     return result;
 }
 export async function testGenEval(event: { genFile: string; evalFile: string; genParams: any }) {
@@ -198,7 +194,7 @@ export async function runGen(data): Promise<{__success__: boolean, __error__?: s
                 for (let i = 1; i < argStrings.length - 1; i++) {
                     args.push(JSON.parse(argStrings[i]));
                 }
-                args.push(JSON.parse(argStrings[argStrings.length - 1].split("const __modules__")[0].split("async")[0]));
+                args.push(JSON.parse(argStrings[argStrings.length - 1].split("const mfn")[0].split("async")[0]));
             }
             const val0 = args.map((arg) => arg.name);
             const val1 = args.map((arg) => {
@@ -211,19 +207,26 @@ export async function runGen(data): Promise<{__success__: boolean, __error__?: s
                 }
                 const numVal = Number(arg.value)
                 if (!numVal && numVal !== 0) {
-                    return arg.value
-                }
+                    if (typeof arg.value !== 'string') {
+                        return arg.value;
+                    }
+                    let val = arg.value;
+                    if (val.startsWith('"') || val.startsWith('\'') || val.startsWith('`')) {
+                        val = val.slice(1)
+                    }
+                    if (val.endsWith('"') || val.endsWith('\'') || val.endsWith('`')) {
+                        val = val.slice(0, -1)
+                    }
+                    return val
+            }
                 return numVal;
             });
-            // const addedString = `__debug__ = false;\n__model__ = null;\n` const fn = new
-            // Function('__modules__', ...val0, addedString + splittedString[1]); const
-            // result = fn(Modules, ...val1); const model =
-            // JSON.stringify(result.model.getData()).replace(/\\/g, '\\\\');
-
-            const prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + `) {\n__debug__ = false;\n__model__ = null;\n`;
+            const prefixString = `async function __main_func(mfn, ifn, ` + val0 + `) {\n__model__ = null;\n`;
             const postfixString = `\n}\nreturn __main_func;`;
             const fn = new Function(prefixString + splittedString[1] + postfixString);
-            const result = await fn()(Funcs, Inlines, ...val1);
+            const mobFuncs = new Funcs();
+            mobFuncs._getModel().debug = false;
+            const result = await fn()(mobFuncs, new InlineClass(false), ...val1);
             const model = getModelString(result.model).replace(/\\/g, "");
 
             let checkModelDB = false;
@@ -319,15 +322,17 @@ export async function runEval(recordInfo): Promise<{__error__?: string}> {
                 for (let i = 1; i < argStrings.length - 1; i++) {
                     args.push(JSON.parse(argStrings[i]));
                 }
-                args.push(JSON.parse(argStrings[argStrings.length - 1].split("const __modules__")[0].split("async")[0]));
+                args.push(JSON.parse(argStrings[argStrings.length - 1].split("const mfn")[0].split("async")[0]));
             }
             const val0 = args.map((arg) => arg.name);
             const val1 = args.map((arg) => arg.value);
 
-            const prefixString = `async function __main_func(__modules__, __inline__, ` + val0 + ") {\n__debug__ = false;\n__model__ = `" + data + "`;\n";
+            const prefixString = `async function __main_func(mfn, ifn, ` + val0 + ") {\n__model__ = `" + data + "`;\n";
             const postfixString = `\n}\nreturn __main_func;`;
             const fn = new Function(prefixString + splittedString[1] + postfixString);
-            const result = await fn()(Funcs, Inlines, ...val1);
+            const mobFuncs = new Funcs();
+            mobFuncs._getModel().debug = false;
+            const result = await fn()(mobFuncs, new InlineClass(false), ...val1);
             const model = getModelString(result.model).replace(/\\/g, "");
             S3_HANDLER.putObject(
                 {
@@ -793,23 +798,64 @@ export async function runGenEvalController(input) {
     if (typeof event.genUrl === "string") {
         return false;
     }
-    const population_size = event.population_size;
-    const max_designs = event.max_designs;
-    const tournament_size = event.tournament_size;
-    const mutation_sd = event.mutation_sd? event.mutation_sd: 0.05;
-    const history = [{
-        runStart: new Date(),
-        runEnd: null,
-        runTime: null,
-        population_size: population_size,
-        max_designs: max_designs,
-        tournament_size: tournament_size,
-        mutation_sd: mutation_sd,
-        genUrl: event.genUrl,
-        evalUrl: event.evalUrl
-    }];
+    // const population_size = event.population_size;
+    // const max_designs = event.max_designs;
+    // const tournament_size = event.tournament_size;
+    // const mutation_sd = event.mutation_sd? event.mutation_sd: 0.05;
+    // const history = [{
+    //     runStart: new Date(),
+    //     runEnd: null,
+    //     runTime: null,
+    //     population_size: population_size,
+    //     max_designs: max_designs,
+    //     tournament_size: tournament_size,
+    //     mutation_sd: mutation_sd,
+    //     genUrl: event.genUrl,
+    //     evalUrl: event.evalUrl
+    // }];
     let updatedPastHistory = false;
     // const survival_size = event.survival_size;
+
+    console.log("Run Settings:", event.run_settings)
+    let population_size, max_designs, tournament_size, mutation_sd, history;
+
+    if (event.run_settings) {
+        const run_settings = JSON.parse(event.run_settings);
+        population_size = run_settings.population_size;
+        max_designs = run_settings.max_designs;
+        tournament_size = run_settings.tournament_size;
+        mutation_sd = run_settings.mutation_sd;
+        history = [{
+            runStart: new Date(),
+            runEnd: null,
+            runTime: null,
+            genUrl: event.genUrl,
+            evalUrl: event.evalUrl,
+            run_settings: run_settings
+        }];
+    } else {
+        population_size = event.population_size;
+        max_designs = event.max_designs;
+        tournament_size = event.tournament_size;
+        mutation_sd = event.mutation_sd? event.mutation_sd: 0.05;
+        history = [{
+            runStart: new Date(),
+            runEnd: null,
+            runTime: null,
+            genUrl: event.genUrl,
+            evalUrl: event.evalUrl,
+            run_settings: {
+                population_size: population_size,
+                max_designs: max_designs,
+                tournament_size: tournament_size,
+                mutation_sd: mutation_sd,
+            }
+        }];
+    }
+    console.log("population_size:", population_size)
+    console.log("max_designs:", max_designs)
+    console.log("tournament_size:", tournament_size)
+    console.log("mutation_sd:", mutation_sd)
 
     const paramMap = {};
     for (const genUrl of event.genUrl) {
