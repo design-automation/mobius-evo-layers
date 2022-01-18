@@ -18,8 +18,6 @@
         "xmlhttprequest": "^1.8.0"
     },
     "_moduleAliases": {
-        "@libs": "./libs",
-        "@assets": ".",
-        "@models": "./model"
+        "@assets": "."
     }
 }

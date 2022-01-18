@@ -161,8 +161,8 @@ def update_layer_permission(funcName, version):
 
 if __name__ == '__main__':
     # copy_from_mobius()
-    # buildcheck = build_code()
-    # if buildcheck:
+    buildcheck = build_code()
+    if buildcheck:
         zipcheck = zipdir()
         if zipcheck:
             zippedFile = open('zipped_file/zip_layer.zip', 'rb').read()
